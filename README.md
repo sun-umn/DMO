@@ -22,9 +22,9 @@ conda activate dmo
 
 | Dataset Name        | Download Link                                                                                   |
 |---------------------|------------------------------------------------------------------------------------------------|
-| UCI dataset         | [Download](https://drive.google.com/drive/folders/1NBHcQohoCJg7gKkvGRC_BCYdCUEwYkq-?usp=drive_link) |
-| Fire dataset        | [Download](https://www.kaggle.com/datasets/phylake1337/fire-dataset/data)                      |
-| eyepacs             | [Download](https://www.kaggle.com/c/diabetic-retinopathy-detection/)                           |
+| UCI                 | [Download](https://drive.google.com/drive/folders/1NBHcQohoCJg7gKkvGRC_BCYdCUEwYkq-?usp=drive_link) |
+| Fire                | [Download](https://www.kaggle.com/datasets/phylake1337/fire-dataset/data)                      |
+| Eyepacs             | [Download](https://www.kaggle.com/c/diabetic-retinopathy-detection/)                           |
 | ADE-corpus-V2       | [Download](https://huggingface.co/datasets/ade_corpus_v2)                                      |
 
 
