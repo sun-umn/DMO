@@ -8,8 +8,10 @@ from tqdm import tqdm
 import argparse
 import os
 import random
-from torch.optim import Adam, SGD
+from torch.optim import Adam, SGD, AdamW
 from torch.optim import lr_scheduler
+# from first_stage.dataloader.eyepacs import get_eyepacs_loaders
+# from first_stage.dataloader.Fastloader import FastTensorDataLoader
 from torchvision import models
 import torch.nn as nn
 
@@ -144,7 +146,7 @@ def BinaryCrossEntropy(y_true, y_pred, reduce="mean"):
         return -torch.mean(term_0+term_1, axis=0)
     
 
-def load_data(ds, split, bias=False, binary=True, device="cpu"):
+def load_data(ds, split, bias=False, binary=True, device="cpu", val=False):
     
     if ds in ['wilt', 'monks-3', 'breast-cancer-wisc']:
         np.random.seed(0)
@@ -215,8 +217,9 @@ def setup():
     parser.add_argument('--ds', type=str, default="wilt")
     parser.add_argument('--seed', default=0, type=int, help="set random seed")
     parser.add_argument('--alpha', default=0.8, type=float, help="set random seed")
-    parser.add_argument('--decouple', action="store_true", help="decoupling the feature and classifier training")
-    parser.add_argument('--ws', action="store_true", help="warm start")
+    parser.add_argument('--no_ws', action="store_true", help="warm start")
+    parser.add_argument('--folding', action="store_true", help="constraint folding")
+    parser.add_argument('--linear', action="store_true", help="use linear model")
     
     args = parser.parse_args()
     
@@ -232,29 +235,37 @@ def set_seed(seed):
     random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
 
-def stochastic_minimizer(func, v_x, eps=1e-1, bound=None, max_rounds=300):
-    v_x.requires_grad = True
+def stochastic_minimizer(func, v_x, eps=1e-1, bound=None, max_rounds=300, is_NN=False, silence=True, lr=1e-3):
+    if is_NN:
+        for param in v_x.parameters():
+            param.requires_grad = True
+    else:
+        v_x.requires_grad = True
+
     max_rounds = max_rounds
     pre_val, cur_val = torch.inf, func(v_x).item()
     init_loss = abs(func(v_x).item())
     # optim = Adam([{'params': v_x, 'lr': 0.05*eps*(abs(init_loss)+1e-9)}])  
-    # optim = Adam([{'params': v_x, 'lr': 5e-3}]) 
-    optim = Adam([{'params': v_x, 'lr': 1e-3}]) 
-    scheduler = lr_scheduler.CosineAnnealingLR(optim, T_max=max_rounds, eta_min=1e-5)
+    # optim = Adam([{'params': v_x, 'lr': 5e-3}])
+    if is_NN:
+        optim = AdamW([{'params': v_x.parameters(), 'lr': lr}]) 
+    else:
+        optim = AdamW([{'params': v_x, 'lr': lr}]) 
+    # scheduler = lr_scheduler.CosineAnnealingLR(optim, T_max=max_rounds, eta_min=1e-5)
     
     # es = EarlyStopper(patience=5, min_delta=eps*(abs(init_loss)+1e-9))
     es = EarlyStopper(patience=10, min_delta=eps*(abs(init_loss)+1e-9))
     count = 0
-    log_step = 100
+    log_step = 1
     while not es.early_stop(cur_val) and count < log_step*max_rounds:
         optim.zero_grad()
         loss = func(v_x)
         loss.backward()
         optim.step()
         
-        if count % log_step == 0:
-            # print(loss.item(), es.counter, es.min_loss)
-            scheduler.step()
+        if not silence and count % log_step == 0:
+            print(loss.item(), es.counter, es.min_loss)
+            # scheduler.step()
             
         cur_val = loss.item()
         count += 1
@@ -262,7 +273,14 @@ def stochastic_minimizer(func, v_x, eps=1e-1, bound=None, max_rounds=300):
         if bound is not None:
             with torch.no_grad():
                 v_x.data = torch.clamp(v_x, min=bound[0], max=bound[1]).data
-    v_x.requires_grad = False
+    
+    if is_NN:
+        for param in v_x.parameters():
+            param.requires_grad = False
+    else:
+        v_x.requires_grad = False
+
+    
     return v_x
 
 
@@ -296,6 +314,8 @@ def load_features(ds, split, device="cpu", seed=2):
         # exit("dataset not support at this moment!")
 
     ## remove the last layer
+    print(net)
+    asdf
     net = nn.Sequential(*list(net.children())[:-1])
 
     features, labels = [], []
@@ -312,6 +332,7 @@ def load_features(ds, split, device="cpu", seed=2):
     labels = torch.from_numpy(labels).float().to(device)
     return features, labels
         
+
     
 
 if __name__ == "__main__":
