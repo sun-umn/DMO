@@ -24,8 +24,7 @@ import json
 LOG_FILE_NAME = ""
 eps = 1e-5
 
-def load_data(ds, split, device, unsqueeze_y=False, tensor=True):
-    base_dir = "/home/jusun/peng0347/Constrained-Imbalaced-Learning/exact_penalty/datasets/"
+def load_data(ds, split, device, unsqueeze_y=False, tensor=True, base_dir='./datasets'):
     data = np.load(f"{base_dir}/{ds}/{split}.npz")
     features, labels = data['features'], data['labels']
     print(split, Counter(labels.tolist()))
@@ -328,7 +327,7 @@ def main(task, objective, metric_constr):
     data_size = torch.sum(train_y==1) + torch.sum(train_y==0)
     n_constraints = data_size+1 if not args.folding else 2
     s = torch.rand(data_size, 1).to(device)
-    s = (s>0.5).float()
+    #s = (s>0.5).float()
     mu = torch.ones(n_constraints, 1).to(device) * 100
     # mu[1:] *= 1000
 
@@ -346,8 +345,8 @@ def main(task, objective, metric_constr):
     # reinit the last layer
 
     # s = (robust_sigmoid(model(train_X)) > 0.5).float()
-    if not args.linear:
-        nn.init.kaiming_uniform_(model.fc_layers.weight)
+    #if not args.linear:
+    #    nn.init.kaiming_uniform_(model.fc_layers.weight)
     
     model.train()
     _, metrics, model, s = solve_exact_penalty(model, train_X, train_y, s, alpha, mu, folding=args.folding, objective=objective, metric_constr=metric_constr, val_X=val_X, val_y=val_y, lr=lr, max_epochs=max_epochs, lr_s=lr_s)

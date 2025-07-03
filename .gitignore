@@ -4,6 +4,7 @@ baseline/
 slurm/
 smooth/
 __pycache__/
+datasets/
 
 *MLP.py
 *.pyc
