@@ -6,7 +6,7 @@
 ___
 #### Pull Git Repo
 ```bash
-git clone git@github.com:PL97/DMO.git
+git clone git@github.com:sun-umn/DMO.git
 ```
 
 #### Prepare Environment
@@ -28,9 +28,11 @@ conda activate dmo
 | ADE-corpus-V2       | [Download](https://huggingface.co/datasets/ade_corpus_v2)                                      |
 
 
+
 ```bash
-mkdir data/
-mv [dataset] data/
+cd DMO/
+mkdir datasets/
+mv [dataset] datasets/ # move downloaded dataset to DMO/datasets/
 ```
 
 
@@ -47,18 +49,21 @@ python FROP.py --ds wilt --alpha 0.8 --seed 0
 # Optimize F-beta score, using wilt dataset, with a prefix threshold 0f 0.8, using a random seed 0
 python OFBS.py --ds wilt --seed 0
 ```
+
+
 Train linear model
 ```bash
 # Fix precision at real, using wilt dataset, with a prefix threshold 0f 0.8, using a random seed 0
-python FPOR.py --ds wilt --alpha 0.8 --linear --seed 0 
+python FPOR.py --ds eyepacs --alpha 0.8 --linear --seed 0 
 
 # Fix recall at precision, using wilt dataset, with a prefix threshold 0f 0.8, using a random seed 0
-python FROP.py --ds wilt --alpha 0.8 --linear --seed 0
+python FROP.py --ds eyepacs --alpha 0.8 --linear --seed 0
 
 # Optimize F-beta score, using wilt dataset, with a prefix threshold 0f 0.8, using a random seed 0
-python OFBS.py --ds wilt --linear --seed 0
+python OFBS.py --ds eyepacs --linear --seed 0
 ```
 
+Example of run log (FROP for Eyepacs)
 
 ```bash
 =========== iter 49 =============
