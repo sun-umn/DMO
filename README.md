@@ -36,6 +36,7 @@ mv [dataset] data/
 
 ### Examples
 
+Train MLP model
 ```bash
 # Fix precision at real, using wilt dataset, with a prefix threshold 0f 0.8, using a random seed 0
 python FPOR.py --ds wilt --alpha 0.8 --seed 0
@@ -46,17 +47,39 @@ python FROP.py --ds wilt --alpha 0.8 --seed 0
 # Optimize F-beta score, using wilt dataset, with a prefix threshold 0f 0.8, using a random seed 0
 python OFBS.py --ds wilt --seed 0
 ```
+Train linear model
+```bash
+# Fix precision at real, using wilt dataset, with a prefix threshold 0f 0.8, using a random seed 0
+python FPOR.py --ds wilt --alpha 0.8 --linear --seed 0 
+
+# Fix recall at precision, using wilt dataset, with a prefix threshold 0f 0.8, using a random seed 0
+python FROP.py --ds wilt --alpha 0.8 --linear --seed 0
+
+# Optimize F-beta score, using wilt dataset, with a prefix threshold 0f 0.8, using a random seed 0
+python OFBS.py --ds wilt --linear --seed 0
+```
+
 
 ```bash
-=========99/100===============
-lambda: 3.226607916197264e+23, 4.729280783717073e+25, [3.226608e+23]
-violation: 3.321038093417883e-05, 3.321038093417883e-05, [0.0181669]
-real obj: [[0.5915493]]                  const: [[0.75]]
-estimated obj: [[0.616051]]              const: [[0.7818332]]
+=========== iter 49 =============
+metric constraint: 4.89354133605957e-05
+ind_constr: max 5.848182354384335e-06    mean 1.975642316409676e-09
+max mu: 119253.234375    mean mu: 3.8800952434539795
+confidence: 0.009909236803650856         lam: 248964.6114895642
+proxy_precision: 0.45377567410469055     proxy_recall: 0.7999510765075684        proxy fb_score: 0.5790709257125854
+precision: 0.45275014638900757   recall: 0.7966474890708923      fb_score: 0.5773698687553406
+--------------------- validation set --------------------
+precision: 0.4125060737133026    recall: 0.7445319294929504      fb_score: 0.5308796167373657
+val obj: -0.4125060737133026     constr: 0.055468082427978516    best obj: -0.41230618953704834          best feasible obj: 0
 
-=========================final evaluation===============================
-Train: real obj: [0.61971831]            const: [0.76300578]
-Test: real obj: [0.70833333]             const: [0.77272727]
+
+
+train Final:
+precision: 0.4517207741737366    recall: 0.7933439612388611      f1: 0.575664758682251
+val final:
+precision: 0.41230618953704834   recall: 0.7445319294929504      f1: 0.5307140350341797
+test final:
+precision: 0.4286929965019226    recall: 0.7175105214118958      f1: 0.5367139577865601
 
 ```
 
