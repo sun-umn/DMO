@@ -1,25 +1,24 @@
-import pandas as pd
-import numpy as np
-from scipy.optimize import minimize, LinearConstraint
-from collections import Counter
-# from utils import indicator_constr, BinaryCrossEntropy, project_s, KL, BinaryCrossEntropy, EarlyStopper
-# from linear_FPOR import lagrangian, lagrangian_helper, lagrangian_helper_s, lagrangian_helper_w, f, classificaiton_loss, warm_start
-from MLP import MLP
-import torch
-from torch.optim import SGD, AdamW, Adam, LBFGS
-from torch.nn import BCELoss, BCEWithLogitsLoss, Sigmoid
-import random
-from copy import deepcopy
-from collections import Counter
-from utils_cuda import load_features, setup, set_seed, robust_sigmoid, stochastic_minimizer, EarlyStopper
-from utils import plot_metrics_curve, plot_output_distribution
 import os
-import matplotlib.pyplot as plt
-from torch.optim import lr_scheduler
 import copy
-import torch.nn as nn
-from collections import defaultdict, Counter
 import json
+import random
+from collections import Counter, defaultdict
+
+import numpy as np
+import torch
+import torch.nn as nn
+import matplotlib.pyplot as plt
+
+from torch.optim import Adam
+from torch.optim import lr_scheduler
+from torch.nn import BCEWithLogitsLoss
+
+from MLP import MLP
+from utils_cuda import (
+    setup, set_seed, robust_sigmoid, stochastic_minimizer,
+    EarlyStopper, plot_metrics_curve
+)
+
 
 LOG_FILE_NAME = ""
 eps = 1e-5
@@ -67,12 +66,23 @@ def eval(fx, y, t):
     return precision, recall, f1
 
 
-def indicator_constr(s, y, fx, t, folding=False):
+def indicator_constr(s, y, fx, t, ineq=True, folding=False):
 
     weights = torch.tensor([torch.sum(y==1), torch.sum(y==0)])
     weights = weights / float(y.shape[0])
 
-    all_constr = torch.abs(torch.maximum(s+fx-t-1, torch.tensor(0)) - torch.maximum(-s, fx-t))
+    if ineq:
+        all_constr = torch.zeros(y.shape[0], 1).to(y.device)
+        ## negative
+        idx = torch.where(y==0)[0]
+        n_tmp = torch.maximum(s[idx]+fx[idx]-t-1, torch.tensor(0)) - torch.maximum(-s[idx], fx[idx]-t)
+        all_constr[idx] = torch.maximum(-n_tmp, torch.tensor(0))
+        ## positive
+        idx = torch.where(y==1)[0]
+        p_tmp = torch.maximum(s[idx]+fx[idx]-t-1, torch.tensor(0)) - torch.maximum(-s[idx], fx[idx]-t)
+        all_constr[idx] = torch.maximum(p_tmp, torch.tensor(0))
+    else:
+        all_constr = torch.abs(torch.maximum(s+fx-t-1, torch.tensor(0)) - torch.maximum(-s, fx-t))
 
     ## negative
     neg_idx = torch.where(y==0)[0]

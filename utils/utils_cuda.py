@@ -1,19 +1,41 @@
-import torch
-import numpy as np
-import os
-import pandas as pd
-from torch.utils.data import DataLoader, Dataset
-from transformers import BertTokenizer, BertModel, AutoTokenizer
-from tqdm import tqdm
-import argparse
 import os
 import random
-from torch.optim import Adam, SGD, AdamW
-from torch.optim import lr_scheduler
-# from first_stage.dataloader.eyepacs import get_eyepacs_loaders
-# from first_stage.dataloader.Fastloader import FastTensorDataLoader
-from torchvision import models
+import argparse
+from collections import Counter
+
+import numpy as np
+import pandas as pd
+
+import torch
 import torch.nn as nn
+from torch.optim import AdamW
+from torch.utils.data import DataLoader, Dataset
+
+from transformers import BertTokenizer, BertModel
+from tqdm import tqdm
+
+import matplotlib.pyplot as plt
+
+def plot_metrics_curve(metrics, saved_dir):
+
+    for name, m in metrics.items():
+        plt.figure(figsize=(12, 8))
+        plt.plot(range(1, len(m) + 1), m, color='blue')
+        plt.xlabel('Epochs')
+        plt.ylabel(name)
+        plt.title(f'{name} over Epochs')
+        plt.grid(True)
+        plt.savefig(f"{saved_dir}/{name}.png")
+
+
+def plot_output_distribution(outputs, bins=50):
+    plt.figure(figsize=(8, 6))
+    plt.hist(outputs, bins=bins, edgecolor='black', alpha=0.7)
+    plt.xlabel('Predicted Output (f(x))')
+    plt.ylabel('Frequency')
+    plt.title('Distribution of Model Outputs')
+    plt.grid(True)
+    plt.show()
 
 
 class TextDataset(Dataset):
@@ -85,46 +107,6 @@ class EarlyStopper:
     def reset(self):
         self.counter = 0
         self.min_loss = np.inf
-
-
-def project_s(s):
-    return torch.minimum(torch.tensor(1), torch.maximum(torch.tensor(0), s))
-
-
-def indicator_constr(s, y, fx, t, data_size, ineq=True, Folding=False, smooth=False, normalize=True):
-    all_constr = torch.zeros(data_size).to(s.device)
-    
-    weights = torch.tensor([torch.sum(y==1), torch.sum(y==0)])
-    weights = weights / float(y.shape[0])
-    
-    ## negative
-    idx = torch.where(y==0)[0]
-    n_tmp = torch.maximum(s[idx]+fx[idx]-t-1, torch.tensor(0)) - torch.maximum(-s[idx], fx[idx]-t)
-    # n_tmp = n_tmp/np.maximum(abs(np.maximum(-s[idx], fx[idx]-t)), 1e-9) if normalize else n_tmp
-
-    all_constr[idx] = torch.maximum(-n_tmp, torch.tensor(0)) if ineq else n_tmp
-    # all_constr[idx] = np.log(1+n_tmp**2)
-
-    if smooth:
-        all_constr[idx] = all_constr[idx] ** 2
-    all_constr[idx] = weights[0] * all_constr[idx]
-    
-    ## positive
-    idx = torch.where(y==1)[0]
-    p_tmp = torch.maximum(s[idx]+fx[idx]-t-1, torch.tensor(0)) - torch.maximum(-s[idx], fx[idx]-t)
-    # p_tmp = p_tmp/np.maximum(abs(np.maximum(-s[idx], fx[idx]-t)), 1e-9) if normalize else p_tmp
-
-    all_constr[idx] = torch.maximum(p_tmp, torch.tensor(0)) if ineq else p_tmp
-    # all_constr[idx] = np.log(1+p_tmp**2)
-    
-    if smooth:
-        all_constr[idx] = all_constr[idx] ** 2
-    all_constr[idx] = weights[0] * all_constr[idx]
-
-    # all_constr = 100 * all_constr
-
-
-    return torch.mean(all_constr).reshape(1, ) if Folding else all_constr
 
 
 def robust_sigmoid(x):
