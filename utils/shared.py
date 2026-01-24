@@ -1,29 +1,31 @@
-import os
 import copy
 import json
+import os
 import random
 from collections import Counter, defaultdict
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
-import matplotlib.pyplot as plt
-
-from torch.optim import Adam
-from torch.optim import lr_scheduler
 from torch.nn import BCEWithLogitsLoss
+from torch.optim import Adam, lr_scheduler
 
 from MLP import MLP
 from utils_cuda import (
-    setup, set_seed, robust_sigmoid, stochastic_minimizer,
-    EarlyStopper, plot_metrics_curve
+    EarlyStopper,
+    plot_metrics_curve,
+    robust_sigmoid,
+    set_seed,
+    setup,
+    stochastic_minimizer,
 )
 
 
 LOG_FILE_NAME = ""
 eps = 1e-5
 
-def load_data(ds, split, device, unsqueeze_y=False, tensor=True, base_dir='./datasets'):
+def load_data(ds, split, device, unsqueeze_y=False, tensor=True, base_dir="./datasets"):
     data = np.load(f"{base_dir}/{ds}/{split}.npz")
     features, labels = data['features'], data['labels']
     print(split, Counter(labels.tolist()))
@@ -66,34 +68,41 @@ def eval(fx, y, t):
     return precision, recall, f1
 
 
-def indicator_constr(s, y, fx, t, ineq=True, folding=False):
+def indicator_constr(s, y, fx, t, folding=False, equal=False):
 
     weights = torch.tensor([torch.sum(y==1), torch.sum(y==0)])
     weights = weights / float(y.shape[0])
+    # print(f"equality formulation is truned on: {equal}")
 
-    if ineq:
+    if not equal:
         all_constr = torch.zeros(y.shape[0], 1).to(y.device)
-        ## negative
-        idx = torch.where(y==0)[0]
-        n_tmp = torch.maximum(s[idx]+fx[idx]-t-1, torch.tensor(0)) - torch.maximum(-s[idx], fx[idx]-t)
+        # negative
+        idx = torch.where(y == 0)[0]
+        n_tmp = torch.maximum(s[idx] + fx[idx] - t - 1, torch.tensor(0)) - torch.maximum(
+            -s[idx], fx[idx] - t
+        )
         all_constr[idx] = torch.maximum(-n_tmp, torch.tensor(0))
-        ## positive
-        idx = torch.where(y==1)[0]
-        p_tmp = torch.maximum(s[idx]+fx[idx]-t-1, torch.tensor(0)) - torch.maximum(-s[idx], fx[idx]-t)
+        # positive
+        idx = torch.where(y == 1)[0]
+        p_tmp = torch.maximum(s[idx] + fx[idx] - t - 1, torch.tensor(0)) - torch.maximum(
+            -s[idx], fx[idx] - t
+        )
         all_constr[idx] = torch.maximum(p_tmp, torch.tensor(0))
     else:
-        all_constr = torch.abs(torch.maximum(s+fx-t-1, torch.tensor(0)) - torch.maximum(-s, fx-t))
+        all_constr = torch.abs(
+            torch.maximum(s + fx - t - 1, torch.tensor(0)) - torch.maximum(-s, fx - t)
+        )
 
-    ## negative
-    neg_idx = torch.where(y==0)[0]
+    # negative
+    neg_idx = torch.where(y == 0)[0]
     all_constr[neg_idx] = weights[0] * all_constr[neg_idx]
 
-    ## positive
-    pos_idx = torch.where(y==1)[0]
+    # positive
+    pos_idx = torch.where(y == 1)[0]
     all_constr[pos_idx] = weights[1] * all_constr[pos_idx]
 
 
-    return torch.mean(all_constr).reshape(1, ) if folding else all_constr/float(y.shape[0])
+    return torch.mean(all_constr).reshape(1,) if folding else all_constr / float(y.shape[0])
 
 
 def classificaiton_loss(model, X, y):
@@ -104,9 +113,19 @@ def classificaiton_loss(model, X, y):
 
 def warm_start(model, X, y, lr=1e-3):
     y = y.unsqueeze(1)
+
     def P_mnn(model):
         return classificaiton_loss(model, X, y)
-    model = stochastic_minimizer(P_mnn, model, eps=eps, is_NN=True, silence=True, lr=lr, max_rounds=3000)
+
+    model = stochastic_minimizer(
+        P_mnn,
+        model,
+        eps=eps,
+        is_NN=True,
+        silence=True,
+        lr=lr,
+        max_rounds=3000,
+    )
     return model
 
 
@@ -115,12 +134,17 @@ def confidence_reg(fx, y, s):
     return conf_reg
 
 
-def P(model, x, y, s, alpha, mu, t, folding, lam=1, objective=None, metric_constr=None):
+def P(model, x, y, s, alpha, mu, t, folding, lam=1, objective=None, metric_constr=None, equal=False):
     fx = robust_sigmoid(model(x))
     met_constr = metric_constr(s, y, alpha)
-    ind_constr = indicator_constr(s, y, fx, t, folding=folding)
+    ind_constr = indicator_constr(s, y, fx, t, folding=folding, equal=equal)
     conf_reg = confidence_reg(fx, y, s)
-    return objective(s, y) + mu[0]*met_constr + (1/len(mu[1:]))*mu[1:].T@ind_constr + lam*conf_reg
+    return (
+        objective(s, y)
+        + mu[0] * met_constr
+        + (1 / len(mu[1:])) * mu[1:].T @ ind_constr
+        + lam * conf_reg
+    )
 
 
 def local_stochastic_minimizer(func, model, s, eps=1e-1, max_rounds=300, is_NN=False, silence=True, lr=1e-2, lr_s=1e-1):
@@ -131,10 +155,15 @@ def local_stochastic_minimizer(func, model, s, eps=1e-1, max_rounds=300, is_NN=F
     max_rounds = max_rounds
     pre_val, cur_val = torch.inf, func(model, s).item()
     init_loss = abs(func(model, s).item())
-    optim = Adam([{'params': model.parameters(), 'lr': lr}, {'params': s, 'lr': lr_s}]) 
+    optim = Adam(
+        [
+            {'params': model.parameters(), 'lr': lr},
+            {'params': s, 'lr': lr_s},
+        ]
+    )
     scheduler = lr_scheduler.CosineAnnealingLR(optim, T_max=max_rounds, eta_min=1e-5)
     
-    es = EarlyStopper(patience=50, min_delta=eps*(abs(init_loss)+1e-9))
+    es = EarlyStopper(patience=50, min_delta=eps * (abs(init_loss) + 1e-9))
     # es = EarlyStopper(patience=50)
     count = 0
     log_step = 1
@@ -156,27 +185,45 @@ def local_stochastic_minimizer(func, model, s, eps=1e-1, max_rounds=300, is_NN=F
 
     for param in model.parameters():
         param.requires_grad = False
-        
+
     s.requires_grad = False
 
-    
     return model, s
 
 
-def solve_exact_penalty(model, X, y, s, alpha, mu, lr=1e-4, t=0.5, folding=True, lam=0.5, objective=None, metric_constr=None, val_X=None, val_y=None, block_descent=False, max_epochs=50, lr_s=1e-1):
+def solve_exact_penalty(
+    model,
+    X,
+    y,
+    s,
+    alpha,
+    mu,
+    lr=1e-4,
+    t=0.5,
+    folding=True,
+    lam=0.5,
+    objective=None,
+    metric_constr=None,
+    val_X=None,
+    val_y=None,
+    block_descent=False,
+    max_epochs=50,
+    lr_s=1e-1,
+    equal=False,
+):
 
     def P_s(var_s):
-        return P(model, X, y, var_s, alpha, mu, t, folding, lam, objective, metric_constr)
+        return P(model, X, y, var_s, alpha, mu, t, folding, lam, objective, metric_constr, equal)
 
 
     def P_mnn(var_mnn):
-        return P(var_mnn, X, y, s, alpha, mu, t, folding, lam, objective, metric_constr)
+        return P(var_mnn, X, y, s, alpha, mu, t, folding, lam, objective, metric_constr, equal)
 
 
     def p_s_mnn(var_mnn, var_s):
-        return P(var_mnn, X, y, var_s, alpha, mu, t, folding, lam, objective, metric_constr)
+        return P(var_mnn, X, y, var_s, alpha, mu, t, folding, lam, objective, metric_constr, equal)
 
-    ## check constrain violation
+    # check constrain violation
     best_model = None
     best_s = None
     feasible_on_val = False
@@ -184,7 +231,7 @@ def solve_exact_penalty(model, X, y, s, alpha, mu, lr=1e-4, t=0.5, folding=True,
     best_obj = 0
     best_feasible = 1
 
-    ## solve subproblem
+    # solve subproblem
     multiply_factor = 1.3
     metrics = defaultdict(lambda: [])
 
@@ -192,29 +239,51 @@ def solve_exact_penalty(model, X, y, s, alpha, mu, lr=1e-4, t=0.5, folding=True,
     for _ in range(max_epochs):
         model.train()
         if block_descent:
-            model = stochastic_minimizer(P_mnn, model, eps=eps, is_NN=True, silence=True, lr=lr, max_rounds=1000)
-            s = stochastic_minimizer(P_s, s, bound=[0, 1], eps=eps, is_NN=False, silence=True, lr=lr_s, max_rounds=1000)
+            model = stochastic_minimizer(
+                P_mnn,
+                model,
+                eps=eps,
+                is_NN=True,
+                silence=True,
+                lr=lr,
+                max_rounds=1000,
+            )
+            s = stochastic_minimizer(
+                P_s,
+                s,
+                bound=[0, 1],
+                eps=eps,
+                is_NN=False,
+                silence=True,
+                lr=lr_s,
+                max_rounds=1000,
+            )
         else:
-            model, s = local_stochastic_minimizer(p_s_mnn, model, s, eps=eps, is_NN=False, silence=True, lr=lr, max_rounds=1000, lr_s=lr_s)
+            model, s = local_stochastic_minimizer(
+                p_s_mnn,
+                model,
+                s,
+                eps=eps,
+                is_NN=False,
+                silence=True,
+                lr=lr,
+                max_rounds=1000,
+                lr_s=lr_s,
+            )
         model.eval()
         with torch.no_grad():
             fx = robust_sigmoid(model(X))
             met_constr = metric_constr(s, y, alpha)
-            ind_constr = indicator_constr(s, y, fx, t, folding=folding)
+            ind_constr = indicator_constr(s, y, fx, t, folding=folding, equal=equal)
             conf_reg = confidence_reg(fx, y, s)
-            
-
-            
 
             mu[1:][ind_constr>eps] *= multiply_factor
             mu[1:][ind_constr<eps] /= multiply_factor
 
             # if torch.mean((ind_constr>eps).float()) < 0.2:
             mu[0][met_constr>eps] *= multiply_factor
-                
-            
+
             # mu = torch.clamp(mu, max=1000)
-            
 
             # if conf_reg > 0.001:
             lam *= multiply_factor
@@ -235,23 +304,21 @@ def solve_exact_penalty(model, X, y, s, alpha, mu, lr=1e-4, t=0.5, folding=True,
             myprint(f"confidence: {conf_reg.item()} \t lam: {lam}")
             myprint(f"proxy_precision: {proxy_precision} \t proxy_recall: {proxy_recall} \t proxy fb_score: {proxy_fbs}")
             myprint(f"precision: {precision} \t recall: {recall} \t fb_score: {f1}")
-            
 
-
-            ## evaluate on the validation set to get the best model
+            # evaluate on the validation set to get the best model
             if val_X is not None and val_y is not None:
                 fx_val = robust_sigmoid(model(val_X))
                 precision, recall, f1 = eval(fx_val, val_y, t)
                 myprint("--------------------- validation set --------------------")
                 myprint(f"precision: {precision} \t recall: {recall} \t fb_score: {f1}")
-                
+
                 metrics['Val Precision'].append(precision)
                 metrics['Val Recall'].append(recall)
                 metrics['Val F1'].append(f1)
 
                 val_s = (fx_val>=0.5).float()
                 val_met_constr = metric_constr(val_s, val_y, alpha).item()
-                obj = objective(val_s, val_y).item() ## obj the lower the better (e.g., -recall)
+                obj = objective(val_s, val_y).item()  # obj the lower the better (e.g., -recall)
                 myprint(f"val obj: {obj} \t constr: {val_met_constr} \t best obj: {best_obj} \t best feasible obj: {best_feasible_obj}")
                 if val_met_constr == 0:
                     feasible_on_val = True
@@ -273,7 +340,7 @@ def solve_exact_penalty(model, X, y, s, alpha, mu, lr=1e-4, t=0.5, folding=True,
     if best_model is None:
         best_model = model
         best_s = s
-   
+
     return model, metrics, best_model, s
 
 
@@ -295,33 +362,32 @@ def eval_clf(model, X, y, val_X, val_y, test_X, test_y):
     myprint(f"test final: \nprecision: {precision} \t recall: {recall} \t f1: {f1}")
 
     myprint(fmt_str)
-
-
-
 def main(task, objective, metric_constr):
     args = setup()
     set_seed(args.seed)
     ds = args.ds
     alpha = args.alpha
+    equal = args.equal
     device = torch.device("cuda")
 
-    #global LOG_FILE_NAME
+    # global LOG_FILE_NAME
     # log_dir = f"./logs/{args.ds}/{task}/alpha_{alpha}/seed_{args.seed}/"
 
-    #global LOG_FILE_NAME
+    formular = "equal" if equal else "inequal"
+    # global LOG_FILE_NAME
     if args.linear:
-        log_dir = f"./logs/{args.ds}/{task}/alpha_{args.alpha}_Linear/seed_{args.seed}/"
+        log_dir = f"./logs/{args.ds}/{task}/alpha_{args.alpha}_{formular}_Linear/seed_{args.seed}/"
         lr = 1e-3
         lr_s = 1e-1
         max_epochs = 50
     else:
-        log_dir = f"./logs/{args.ds}/{task}/alpha_{args.alpha}_MLP/seed_{args.seed}/"
+        log_dir = f"./logs/{args.ds}/{task}/alpha_{args.alpha}_{formular}_MLP/seed_{args.seed}/"
         lr = 1e-4
         lr_s = 1e-1
         max_epochs = 50
 
     os.makedirs(log_dir, exist_ok=True)
-    
+
     global LOG_FILE_NAME
 
     LOG_FILE_NAME += f"{log_dir}/log_folding_{args.folding}.txt"
@@ -333,7 +399,11 @@ def main(task, objective, metric_constr):
     test_X, test_y = load_data(ds=ds, split="test", device=device)
 
     # model = MLP(input_dim=X.shape[1], hidden_dim=100, num_layers=10, output_dim=1).to(device)
-    model = MLP(input_dim=train_X.shape[1], hidden_dim=100, num_layers=10, output_dim=1).to(device) if not args.linear else nn.Linear(train_X.shape[1], 1, bias=True).to(device)
+    model = (
+        MLP(input_dim=train_X.shape[1], hidden_dim=100, num_layers=10, output_dim=1).to(device)
+        if not args.linear
+        else nn.Linear(train_X.shape[1], 1, bias=True).to(device)
+    )
     data_size = torch.sum(train_y==1) + torch.sum(train_y==0)
     n_constraints = data_size+1 if not args.folding else 2
     s = torch.rand(data_size, 1).to(device)
@@ -343,7 +413,6 @@ def main(task, objective, metric_constr):
 
     myprint(f"feature dimension: {train_X.shape}\nlabel distribution: {Counter(train_y.detach().tolist())}")
 
-    
     if not args.no_ws:
         if args.linear:
             model = warm_start(model, train_X, copy.deepcopy(train_y), lr=1e-2)
@@ -359,13 +428,29 @@ def main(task, objective, metric_constr):
     #    nn.init.kaiming_uniform_(model.fc_layers.weight)
     
     model.train()
-    _, metrics, model, s = solve_exact_penalty(model, train_X, train_y, s, alpha, mu, folding=args.folding, objective=objective, metric_constr=metric_constr, val_X=val_X, val_y=val_y, lr=lr, max_epochs=max_epochs, lr_s=lr_s)
+    _, metrics, model, s = solve_exact_penalty(
+        model,
+        train_X,
+        train_y,
+        s,
+        alpha,
+        mu,
+        folding=args.folding,
+        objective=objective,
+        metric_constr=metric_constr,
+        val_X=val_X,
+        val_y=val_y,
+        lr=lr,
+        max_epochs=max_epochs,
+        lr_s=lr_s,
+        equal=equal,
+    )
     
     eval_clf(model, train_X, train_y, val_X, val_y, test_X, test_y)
 
     # np.savez(f'{log_dir}/s.npz', s=s)
     results = {
-        "s": s.detach().cpu().flatten().tolist()
+        "s": s.detach().cpu().flatten().tolist(),
     }
     with open(f'{log_dir}/results.json', 'w') as json_file:
         json.dump(results, json_file, indent=4)

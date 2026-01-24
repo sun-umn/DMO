@@ -1,4 +1,4 @@
-*logs*/
+*log*/
 first_stage/
 baseline/
 slurm/
@@ -11,3 +11,7 @@ datasets/
 *.txt
 *.out
 *.slurm
+*.sh
+summarize*
+format*
+phta.py

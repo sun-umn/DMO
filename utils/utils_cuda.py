@@ -202,6 +202,7 @@ def setup():
     parser.add_argument('--no_ws', action="store_true", help="warm start")
     parser.add_argument('--folding', action="store_true", help="constraint folding")
     parser.add_argument('--linear', action="store_true", help="use linear model")
+    parser.add_argument('--equal', action="store_true", help="use equality reformulation")
     
     args = parser.parse_args()
     
